@@ -84,54 +84,142 @@
     </section>
   </div>
 
-  <script>
-    const API = 'https://your-workers-domain.workers.dev'; // 部署後替換
-    const STATUSES = ['新單','處理中','待客戶回覆','完成','取消'];
+<script>
+  const API = 'https://csr-records-api.ravenxia1205-801.workers.dev'; // 你的 Workers 網址
+  const STATUSES = ['新單','處理中','待客戶回覆','完成','取消'];
 
-    function fillStatuses(){
-      const st = document.getElementById('status');
-      const qs = document.getElementById('qStatus');
-      st.innerHTML=''; qs.innerHTML='';
-      STATUSES.forEach(s=>{ st.append(new Option(s,s)); qs.append(new Option(s,s)); });
-      qs.insertBefore(new Option('全部','全部'), qs.firstChild);
+  // 小工具
+  const j = (r)=>r.json();
+  const opt = (body)=>({
+    method:'POST',
+    credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body||{})
+  });
+
+  /* === API 包裝 === */
+  async function login(u, p){
+    return fetch(API + '/api/login', opt({ username:u, password:p })).then(j);
+  }
+  async function searchRecords({ keyword='', status='全部', dateFrom='', dateTo='' }={}){
+    return fetch(API + '/api/records/search', opt({ keyword, status, dateFrom, dateTo })).then(j);
+  }
+  async function upsertRecord(rec){
+    // rec: { id?, '建單日期','客戶','說明','處理方式','狀態','備註' }
+    return fetch(API + '/api/records/upsert', opt(rec)).then(j);
+  }
+  async function deleteRecord(id){
+    return fetch(API + '/api/records/delete', opt({ id })).then(j);
+  }
+  async function getRecord(id){
+    return fetch(API + '/api/records/get', opt({ id })).then(j);
+  }
+
+  /* === UI 綁定 === */
+  function fillStatuses(){
+    const st = document.getElementById('status');
+    const qs = document.getElementById('qStatus');
+    st.innerHTML=''; qs.innerHTML='';
+    STATUSES.forEach(s=>{ st.append(new Option(s,s)); qs.append(new Option(s,s)); });
+    qs.insertBefore(new Option('全部','全部'), qs.firstChild);
+  }
+
+  async function doLogin(){
+    const username = document.getElementById('u').value.trim();
+    const password = document.getElementById('p').value.trim();
+    const res = await login(username, password);
+    const msg = document.getElementById('loginMsg');
+    if (res.ok){
+      msg.textContent='登入成功';
+      document.getElementById('login').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+      await reloadList();
+    }else{
+      msg.textContent='帳號或密碼錯誤';
     }
+  }
+  document.getElementById('logoutBtn').onclick = ()=>{
+    document.cookie='sess=; Max-Age=0; Path=/';
+    location.reload();
+  };
 
-    async function doLogin(){
-      const username = document.getElementById('u').value.trim();
-      const password = document.getElementById('p').value.trim();
-      const r = await fetch(API + '/api/login', { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, password })});
-      const j = await r.json();
-      const msg = document.getElementById('loginMsg');
-      if (j.ok){ msg.textContent='登入成功'; document.getElementById('login').classList.add('hidden'); document.getElementById('app').classList.remove('hidden'); reloadList(); }
-      else msg.textContent='帳號或密碼錯誤';
+  function resetForm(){
+    ['recId','date','customer','handling','desc','note'].forEach(id=>{
+      const el = document.getElementById(id); if (el) el.value='';
+    });
+    const st = document.getElementById('status'); if (st) st.selectedIndex=0;
+  }
+
+  /* === 列表 === */
+  async function reloadList(){
+    const query = {
+      keyword: (document.getElementById('q')?.value || '').trim(),
+      status:  document.getElementById('qStatus')?.value || '全部',
+      dateFrom: document.getElementById('qFrom')?.value || '',
+      dateTo:   document.getElementById('qTo')?.value || ''
+    };
+    const rows = await searchRecords(query);
+    const tbody = document.getElementById('list');
+    tbody.innerHTML = '';
+    (rows||[]).forEach(r=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${r['建單日期']||''}</td>
+        <td>${r['客戶']||''}</td>
+        <td class="muted">${(r['說明']||'').slice(0,60)}</td>
+        <td><span class="tag">${r['狀態']||''}</span></td>
+        <td>
+          <button class="btn ghost" onclick="fillForm('${r.id}')">編輯</button>
+          <button class="btn ghost" onclick="removeRec('${r.id}')">刪除</button>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  /* === 編輯 === */
+  async function fillForm(id){
+    const rec = await getRecord(id);
+    if (!rec){ alert('找不到資料'); return; }
+    document.getElementById('recId').value = rec.id||'';
+    document.getElementById('date').value = rec['建單日期']||'';
+    document.getElementById('customer').value = rec['客戶']||'';
+    document.getElementById('handling').value = rec['處理方式']||'';
+    document.getElementById('status').value = rec['狀態']||'';
+    document.getElementById('desc').value = rec['說明']||'';
+    document.getElementById('note').value = rec['備註']||'';
+  }
+
+  /* === 儲存（新增/更新） === */
+  async function saveRec(){
+    const payload = {
+      id: document.getElementById('recId').value || undefined,
+      '建單日期': document.getElementById('date').value,
+      '客戶': document.getElementById('customer').value.trim(),
+      '說明': document.getElementById('desc').value.trim(),
+      '處理方式': document.getElementById('handling').value.trim(),
+      '狀態': document.getElementById('status').value,
+      '備註': document.getElementById('note').value.trim()
+    };
+    const res = await upsertRecord(payload);
+    if (res.ok){
+      alert('已儲存');
+      document.getElementById('recId').value = res.id || payload.id || '';
+      await reloadList();
+    }else{
+      alert('失敗：' + (res.error||''));
     }
+  }
 
-    document.getElementById('logoutBtn').onclick = ()=>{ document.cookie='sess=; Max-Age=0; Path=/'; location.reload(); };
+  /* === 刪除 === */
+  async function removeRec(id){
+    if(!confirm('確定刪除？')) return;
+    const res = await deleteRecord(id);
+    if(res.ok){ await reloadList(); } else { alert('刪除失敗'); }
+  }
 
-    function resetForm(){ ['recId','date','customer','handling','desc','note'].forEach(id=>document.getElementById(id).value=''); document.getElementById('status').selectedIndex=0; document.getElementById('uploadBox').classList.add('hidden'); document.getElementById('fileList').innerHTML=''; }
+  // 初始化
+  fillStatuses();
+</script>
 
-    function collectForm(){ return { id:recId.value||'', date:date.value, customer:customer.value.trim(), handling:handling.value.trim(), status:status.value, desc:desc.value.trim(), note:note.value.trim() }; }
-
-    async function saveRec(){
-      const r = await fetch(API+'/api/records/upsert', { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(collectForm()) });
-      const j = await r.json();
-      if(j.ok){ alert('已儲存'); recId.value=j.id; uploadBox.classList.remove('hidden'); refreshFiles(j.id); reloadList(); } else alert('儲存失敗');
-    }
-
-    async function reloadList(){
-      const query = { keyword:q.value.trim(), status:qStatus.value||'全部', dateFrom:qFrom.value, dateTo:qTo.value };
-      const r = await fetch(API+'/api/records/search', { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(query) });
-      const list = await r.json(); const tbody = document.getElementById('list'); tbody.innerHTML='';
-      (list||[]).forEach(item=>{ const tr=document.createElement('tr'); const files=(item.attachments||[]).map(f=>`<a href="${f.url}" target="_blank">${f.name}</a>`).join('<br/>'); tr.innerHTML=`<td>${item.date||''}</td><td>${item.customer||''}</td><td class='muted'>${(item.desc||'').slice(0,60)}</td><td><span class='tag'>${item.status||''}</span></td><td>${files}</td><td><button class='btn ghost' onclick="editRec('${item.id}')">編輯</button> <button class='btn ghost' onclick="startUpload('${item.id}')">附件</button></td>`; tbody.appendChild(tr); });
-    }
-
-    async function editRec(id){ const r=await fetch(API+'/api/records/get',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); const rec=await r.json(); if(!rec) return alert('找不到資料'); recId.value=rec.id||''; date.value=rec.date||''; customer.value=rec.customer||''; handling.value=rec.handling||''; status.value=rec.status||''; desc.value=rec.desc||''; note.value=rec.note||''; uploadBox.classList.remove('hidden'); renderFiles(rec.attachments||[]); }
-    function startUpload(id){ recId.value=id; uploadBox.classList.remove('hidden'); refreshFiles(id); }
-    async function refreshFiles(id){ const r=await fetch(API+'/api/records/get',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); const rec=await r.json(); renderFiles((rec&&rec.attachments)||[]); }
-    function renderFiles(files){ const box=fileList; if(!files.length){ box.innerHTML='<span class="muted">尚無附件</span>'; return; } box.innerHTML = files.map(f=>`<div>• <a target="_blank" href="${f.url}">${f.name}</a></div>`).join(''); }
-    async function uploadFiles(){ const id=recId.value; if(!id) return alert('請先儲存紀錄'); if(!attachments.files.length) return alert('請選擇檔案'); const fd=new FormData(); fd.set('recordId', id); for(const f of attachments.files) fd.append('attachments', f); uploadHint.textContent='上傳中...'; const r=await fetch(API+'/api/upload',{method:'POST',credentials:'include',body:fd}); const j=await r.json(); if(j.ok){ uploadHint.textContent='完成'; attachments.value=''; refreshFiles(id); reloadList(); } else { uploadHint.textContent='失敗'; }}
-
-    fillStatuses();
-  </script>
 </body>
 </html>
