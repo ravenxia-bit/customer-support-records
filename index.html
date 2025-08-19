@@ -136,6 +136,7 @@
       await reloadList();
     }else{
       msg.textContent='帳號或密碼錯誤';
+      msg.style.color = 'red';
     }
   }
   document.getElementById('logoutBtn').onclick = ()=>{
