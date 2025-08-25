@@ -21,7 +21,30 @@
     .tag{background:#f3f4f6; padding:4px 8px; border-radius:999px; font-size:12px}
     .muted{color:#6b7280; font-size:12px}
     .hidden{display:none}
+	
     .login{max-width:420px; margin:8vh auto}
+	/* ✅ 讓寬度計算含 padding/border，避免撐破格線 */
+    *, *::before, *::after { box-sizing: border-box; }
+    /* ✅ 表單欄位在 grid 中可縮放，不會硬撐溢出 */
+	.grid > * { min-width: 0; }
+	/* ✅ 標籤獨佔一行，與欄位分開，避免重疊 */
+	label { display:block; margin-bottom:6px; }
+	/* ✅ 兩欄排版：大螢幕兩欄，小螢幕自動一欄 */
+	.grid-2 { grid-template-columns: 1fr; }
+	@media (min-width: 768px){
+    .grid-2 { grid-template-columns: repeat(2, minmax(0,1fr)); column-gap: var(--gap); }
+}
+
+/* ✅ 控制欄位的視覺、避免 select/date 被撐壞 */
+input, select, textarea {
+  width: 100%;
+  max-width: 100%;
+  display: block;
+}
+
+/* ✅ 需要整行的區塊就加 .col-span-2（你「說明/備註」那塊已經有用 1/-1 也可以） */
+.col-span-2 { grid-column: 1 / -1; }
+
   </style>
 </head>
 <body>
